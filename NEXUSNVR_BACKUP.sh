@@ -14,7 +14,7 @@ API_CONFIG="$NVR_ROOT/api/nvr_config.json"
 GO2RTC_CONFIG="$NVR_ROOT/go2rtc/go2rtc.yaml"
 RETENTION_CONFIG="$NVR_ROOT/retencao_nvr.conf"
 COMPOSE_FILE="$NVR_ROOT/nvr-compose/docker-compose.yml"
-PROXY_DIR="$NVR_ROOT/nginx-proxy-manager/data/nginx/proxy_host"
+PROXY_DIR="$NVR_ROOT/nginx/conf.d"
 RECORDINGS_DIR="$NVR_ROOT/gravacoes"
 LOG_FILE="/tmp/nexus_nvr_backup_$(date +%Y%m%d_%H%M%S).log"
 
@@ -94,7 +94,7 @@ validate_system(){
   docker info >/dev/null 2>&1 || die "Docker nao esta respondendo"
   ok "Docker respondendo"
 
-  local required=(go2rtc nvr-frontend visualizador_videos nexus_api nginx-proxy-manager_app_1)
+  local required=(go2rtc nvr-frontend visualizador_videos nexus_api nvr_proxy)
   local c status
   for c in "${required[@]}"; do
     status="$(docker inspect -f '{{.State.Status}}' "$c" 2>/dev/null || true)"

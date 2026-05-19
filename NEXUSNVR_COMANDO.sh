@@ -115,6 +115,7 @@ validate_package(){
     NEXUSNVR_RETENCAO.sh
     NEXUSNVR_LIMPEZA.sh
     NEXUSNVR_PORTAO.sh
+    NEXUSNVR_AGENDAMENTOS.sh
     nexus_nvr_pacote/api/api.js
     nexus_nvr_pacote/frontend/index.html
     nexus_nvr_pacote/go2rtc/go2rtc.yaml

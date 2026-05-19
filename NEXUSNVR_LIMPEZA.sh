@@ -119,7 +119,7 @@ yes_no(){
 nvr_container_names(){
   if ! cmd_exists docker; then return 0; fi
   {
-    for name in nexus_api go2rtc nvr-frontend visualizador_videos nginx-proxy-manager_app_1; do
+    for name in nexus_api go2rtc nvr-frontend visualizador_videos nvr_proxy nginx-proxy-manager_app_1; do
       docker ps -a --format '{{.Names}}' 2>/dev/null | grep -Fx "$name" || true
     done
     docker ps -a --format '{{.Names}}' 2>/dev/null | grep -E '^gravador_' || true
@@ -240,9 +240,11 @@ show_status(){
     "$NVR_ROOT/api"
     "$NVR_ROOT/go2rtc"
     "$NVR_ROOT/nvr-web"
+    "$NVR_ROOT/nginx"
     "$NVR_ROOT/nginx-proxy-manager"
     "$NVR_ROOT/filebrowser_config"
     "$NVR_ROOT/filebrowser_db"
+    "$NVR_ROOT/cron"
     "$NVR_ROOT/cria_pasta_camera.sh"
   )
 
@@ -308,7 +310,7 @@ show_status(){
   cmd_exists npm && kv "npm" "$(npm -v 2>/dev/null || echo instalado)" || kv "npm" "nao encontrado"
 
   section "CRON DO NVR"
-  crontab -l -u root 2>/dev/null | grep -E 'NEXUS_NVR_RETENCAO|/home/nexus/cria_pasta_camera.sh' || info "Nenhuma linha de cron do NVR encontrada."
+  crontab -l -u root 2>/dev/null | grep -E 'NEXUS_NVR_RETENCAO|NEXUS_NVR_CRIAR_PASTAS|/home/nexus/cria_pasta_camera.sh|/home/nexus/cron/' || info "Nenhuma linha de cron do NVR encontrada."
 }
 
 remove_containers(){
@@ -362,7 +364,7 @@ remove_cron(){
   after="$(mktemp)"
 
   if crontab -l -u root > "$before" 2>/dev/null; then
-    grep -vE 'NEXUS_NVR_RETENCAO|/home/nexus/cria_pasta_camera.sh' "$before" > "$after" || true
+    grep -vE 'NEXUS_NVR_RETENCAO|NEXUS_NVR_CRIAR_PASTAS|/home/nexus/cria_pasta_camera.sh|/home/nexus/cron/' "$before" > "$after" || true
     crontab -u root "$after"
     CHANGED=$((CHANGED+1))
     ok "Linhas de cron do NVR removidas."
@@ -588,7 +590,10 @@ remove_state_only(){
     done < <(find "$NVR_ROOT" -maxdepth 2 -type f \( -iname '*state*.env' -o -iname '*continuacao*.env' -o -iname '*resume*.env' \) 2>/dev/null)
   fi
 
-  [[ "$found" -eq 0 ]] && warn "Nenhum arquivo state/continuacao encontrado."
+  if [[ "$found" -eq 0 ]]; then
+    warn "Nenhum arquivo state/continuacao encontrado."
+  fi
+  return 0
 }
 
 post_summary(){

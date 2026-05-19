@@ -95,6 +95,16 @@ retention_menu(){
   done
 }
 
+schedules_menu(){
+  if [[ -x "/home/nexus/cron/configurar_agendamentos.sh" ]]; then
+    bash "/home/nexus/cron/configurar_agendamentos.sh"
+    pause
+    return 0
+  fi
+
+  run_script "NEXUSNVR_AGENDAMENTOS.sh"
+}
+
 main_menu(){
   local opt=""
 
@@ -107,6 +117,7 @@ main_menu(){
     echo "5) Retencao de videos"
     echo "6) Configurar portao"
     echo "7) Limpeza / manutencao"
+    echo "8) Agendamentos automaticos"
     echo "0) Sair"
     echo
     read -r -p "Escolha uma opcao: " opt
@@ -119,6 +130,7 @@ main_menu(){
       5) retention_menu ;;
       6) run_script "NEXUSNVR_PORTAO.sh" ;;
       7) run_script "NEXUSNVR_LIMPEZA.sh" ;;
+      8) schedules_menu ;;
       0) echo "Saindo."; exit 0 ;;
       *) echo "Opcao invalida."; sleep 1 ;;
     esac

@@ -35,6 +35,14 @@ O pacote fica instalado em:
 /opt/nexusnvr
 ```
 
+Durante a instalacao do NVR, os scripts que rodam automaticamente pelo cron sao copiados para:
+
+```text
+/home/nexus/cron
+```
+
+Assim os agendamentos nao dependem da pasta onde o pacote foi baixado.
+
 ## Instalacao Manual
 
 Entre na pasta do pacote e execute:
@@ -116,15 +124,12 @@ Servicos principais:
 - Painel Nexus NVR: `http://IP_OU_DOMINIO:PORTA`
 - Go2RTC direto: `http://IP_DO_SERVIDOR:1984`
 - Visualizador de videos: `http://IP_DO_SERVIDOR:8085`
-- Nginx Proxy Manager: `http://IP_DO_SERVIDOR:81`
+
+O proxy principal usa Nginx puro no container `nvr_proxy`. Nao existe painel web do Nginx Proxy Manager nesta versao.
 
 Credenciais iniciais:
 
 ```text
-Nginx Proxy Manager
-Usuario: admin@nexusnvr.local
-Senha: nexusnvr1234
-
 Filebrowser
 Usuario: nexusnvr
 Senha: nexusnvr1234
@@ -169,7 +174,8 @@ sudo bash NEXUSNVR_RETENCAO.sh --clean
 O modo automatico e instalado no cron:
 
 ```text
-*/10 * * * * /opt/nexusnvr/NEXUSNVR_RETENCAO.sh --auto
+*/10 * * * * /home/nexus/cron/retencao_nvr.sh --auto # NEXUS_NVR_RETENCAO
+49 23 * * * /home/nexus/cron/cria_pasta_camera.sh # NEXUS_NVR_CRIAR_PASTAS
 ```
 
 A retencao so apaga arquivos dentro da pasta segura de gravacoes e respeita protecao para arquivos recentes.

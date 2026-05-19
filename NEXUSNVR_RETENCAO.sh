@@ -15,6 +15,8 @@ LOG_FILE="${LOG_FILE:-/var/log/nexus_nvr_retencao.log}"
 LAST_RUN_FILE="${LAST_RUN_FILE:-/home/nexus/.retencao_nvr_last_run}"
 CRON_MARKER="NEXUS_NVR_RETENCAO"
 SCRIPT_PATH="$(readlink -f "$0" 2>/dev/null || echo "$0")"
+CRON_SCRIPT_PATH="${RETENTION_CRON_SCRIPT:-/home/nexus/cron/retencao_nvr.sh}"
+[[ -x "$CRON_SCRIPT_PATH" ]] || CRON_SCRIPT_PATH="$SCRIPT_PATH"
 
 red='\033[0;31m'
 green='\033[0;32m'
@@ -788,18 +790,18 @@ enable_auto(){
 
   configure_auto_interval
 
-  chmod +x "$SCRIPT_PATH" 2>/dev/null || true
+  chmod +x "$CRON_SCRIPT_PATH" 2>/dev/null || true
 
   local tmp
   tmp="$(mktemp)"
   crontab -l 2>/dev/null | grep -v "$CRON_MARKER" > "$tmp" || true
-  echo "*/10 * * * * $SCRIPT_PATH --auto # $CRON_MARKER" >> "$tmp"
+  echo "*/10 * * * * $CRON_SCRIPT_PATH --auto # $CRON_MARKER" >> "$tmp"
   crontab "$tmp"
   rm -f "$tmp"
 
   section "ATIVADO"
   kv "Intervalo escolhido" "a cada ${AUTO_INTERVAL_MINUTES} minuto(s)"
-  kv "Cron tecnico" "*/10 * * * * $SCRIPT_PATH --auto"
+  kv "Cron tecnico" "*/10 * * * * $CRON_SCRIPT_PATH --auto"
   note "O cron acorda a cada 10 minutos, mas o script respeita o intervalo escolhido."
 }
 

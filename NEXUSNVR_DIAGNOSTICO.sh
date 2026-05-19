@@ -198,7 +198,7 @@ check_docker(){
 
   docker ps --format '  {{.Names}}\t{{.Status}}' | sort
 
-  local required=(go2rtc nvr-frontend visualizador_videos nexus_api nginx-proxy-manager_app_1)
+  local required=(go2rtc nvr-frontend visualizador_videos nexus_api nvr_proxy)
   local c status
   line
   for c in "${required[@]}"; do
@@ -222,7 +222,7 @@ check_docker(){
 check_ports(){
   section "PORTAS"
 
-  local ports=("${PANEL_PORT:-48902}" 81 443 1984 3000 8085 9000 8554)
+  local ports=("${PANEL_PORT:-48902}" 1984 3000 8085 9000 8554)
   local p
 
   if command -v ss >/dev/null 2>&1; then
@@ -328,13 +328,13 @@ check_retention(){
     warn "Config de retencao nao encontrada"
   fi
 
-  if crontab -l -u root 2>/dev/null | grep -q 'NEXUS_NVR_RETENCAO'; then
+  if crontab -l -u root 2>/dev/null | grep -q '/home/nexus/cron/retencao_nvr.sh.*NEXUS_NVR_RETENCAO'; then
     ok "Cron da retencao instalado"
   else
     warn "Cron da retencao nao encontrado"
   fi
 
-  if crontab -l -u root 2>/dev/null | grep -q 'cria_pasta_camera.sh'; then
+  if crontab -l -u root 2>/dev/null | grep -q '/home/nexus/cron/cria_pasta_camera.sh.*NEXUS_NVR_CRIAR_PASTAS'; then
     ok "Cron de criacao de pastas instalado"
   else
     warn "Cron de criacao de pastas nao encontrado"
@@ -349,7 +349,7 @@ check_logs(){
     return
   fi
 
-  local containers=(nexus_api go2rtc nginx-proxy-manager_app_1)
+  local containers=(nexus_api go2rtc nvr_proxy)
   local c
   for c in "${containers[@]}"; do
     echo

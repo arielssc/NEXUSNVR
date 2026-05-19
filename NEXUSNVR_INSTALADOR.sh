@@ -5,10 +5,11 @@
 
 set -uo pipefail
 
-VERSION="2026-05-19-publico-10.13-pacote-nvr"
+VERSION="2026-05-19-publico-10.15-nginx-puro"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PACKAGE_DIR="${SCRIPT_DIR}/nexus_nvr_pacote"
 TARGET="/home/nexus"
+CRON_DIR="${TARGET}/cron"
 COMPOSE_DIR="${TARGET}/nvr-compose"
 COMPOSE_FILE="${COMPOSE_DIR}/docker-compose.yml"
 STATE_FILE="${TARGET}/nvr_auto_state.env"
@@ -18,8 +19,6 @@ DEFAULT_FINAL_LAST="27"
 DEFAULT_PANEL_PORT="48902"
 DEFAULT_TZ="America/Sao_Paulo"
 DEFAULT_NETWORK_MODE="hybrid"
-DEFAULT_NPM_EMAIL="admin@nexusnvr.local"
-DEFAULT_NPM_PASS="nexusnvr1234"
 DEFAULT_FB_USER="nexusnvr"
 DEFAULT_FB_PASS="nexusnvr1234"
 
@@ -446,8 +445,6 @@ ask_config(){
 
   ask_recording_storage
 
-  NPM_EMAIL="$DEFAULT_NPM_EMAIL"
-  NPM_PASS="$DEFAULT_NPM_PASS"
   FB_USER="$DEFAULT_FB_USER"
   FB_PASS="$DEFAULT_FB_PASS"
 
@@ -463,7 +460,6 @@ ask_config(){
   echo "Serviços:"
   echo "  Nexus NVR: painel, API, live Go2RTC, gravador FFmpeg e visualizador de vídeos"
   echo "Credenciais iniciais:"
-  echo "  Nginx Proxy Manager: $NPM_EMAIL / $NPM_PASS"
   echo "  Filebrowser: $FB_USER / $FB_PASS"
   echo
   echo "Antes de publicar ou entregar o servidor, altere as senhas padrão."
@@ -482,8 +478,6 @@ EXTERNAL_PORT="$EXTERNAL_PORT"
 RECORDINGS_MOUNT="$RECORDINGS_MOUNT"
 RECORDINGS_REAL_DIR="$RECORDINGS_REAL_DIR"
 RECORDINGS_SYSTEM_DIR="$RECORDINGS_SYSTEM_DIR"
-NPM_EMAIL="$NPM_EMAIL"
-NPM_PASS="$NPM_PASS"
 FB_USER="$FB_USER"
 FB_PASS="$FB_PASS"
 PHASE="CONFIGURED"
@@ -574,7 +568,7 @@ install_deps(){
     local all nvr
     all="$(docker ps -a --format '{{.Names}}' 2>/dev/null | sort -u || true)"
     nvr="$({
-      for n in nexus_api go2rtc nvr-frontend visualizador_videos nginx-proxy-manager_app_1; do
+      for n in nexus_api go2rtc nvr-frontend visualizador_videos nvr_proxy nginx-proxy-manager_app_1; do
         echo "$all" | grep -Fx "$n" || true
       done
       echo "$all" | grep -E '^gravador_' || true
@@ -758,7 +752,7 @@ prepare_files(){
   id nexus >/dev/null 2>&1 || adduser --disabled-password --gecos "" nexus
   ok "Usuário nexus pronto"
 
-  mkdir -p "$TARGET"/{nvr-web,api,go2rtc,filebrowser_config,filebrowser_db,nginx-proxy-manager/data/nginx/proxy_host,nginx-proxy-manager/letsencrypt,scripts,gravacoes,nvr-compose,logs}
+  mkdir -p "$TARGET"/{nvr-web,api,go2rtc,filebrowser_config,filebrowser_db,nginx/conf.d,scripts,gravacoes,nvr-compose,logs,cron}
 
   cp -a "$PACKAGE_DIR/frontend/." "$TARGET/nvr-web/"
   cp -a "$PACKAGE_DIR/api/." "$TARGET/api/"
@@ -770,6 +764,7 @@ prepare_files(){
   [[ -f "$TARGET/scripts/cria_pasta_camera.sh" ]] || create_folder_script
   chmod +x "$TARGET/scripts/cria_pasta_camera.sh"
   cp -a "$TARGET/scripts/cria_pasta_camera.sh" "$TARGET/cria_pasta_camera.sh"
+  install_cron_scripts
 
   setup_recording_storage
 
@@ -780,6 +775,26 @@ prepare_files(){
   patch_api_webrtc_env
 
   ok "Arquivos copiados e configurados"
+}
+
+install_cron_scripts(){
+  mkdir -p "$CRON_DIR"
+
+  cp -a "$TARGET/scripts/cria_pasta_camera.sh" "$CRON_DIR/cria_pasta_camera.sh"
+
+  if [[ -f "$SCRIPT_DIR/NEXUSNVR_RETENCAO.sh" ]]; then
+    cp -a "$SCRIPT_DIR/NEXUSNVR_RETENCAO.sh" "$CRON_DIR/retencao_nvr.sh"
+  else
+    warn "NEXUSNVR_RETENCAO.sh nao encontrado em $SCRIPT_DIR; retencao automatica nao foi atualizada"
+  fi
+
+  if [[ -f "$SCRIPT_DIR/NEXUSNVR_AGENDAMENTOS.sh" ]]; then
+    cp -a "$SCRIPT_DIR/NEXUSNVR_AGENDAMENTOS.sh" "$CRON_DIR/configurar_agendamentos.sh"
+  fi
+
+  chmod +x "$CRON_DIR"/*.sh 2>/dev/null || true
+  chown -R nexus:nexus "$CRON_DIR" 2>/dev/null || true
+  ok "Scripts de cron instalados em $CRON_DIR"
 }
 
 create_folder_script(){
@@ -992,20 +1007,14 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     command: ["sh", "-c", "apk add --no-cache docker-cli tzdata && node /app/api.js"]
 
-
-  nginx-proxy-manager:
-    image: jc21/nginx-proxy-manager:latest
-    container_name: nginx-proxy-manager_app_1
+  nvr_proxy:
+    image: nginx:alpine
+    container_name: nvr_proxy
     restart: unless-stopped
     ports:
       - "${PANEL_PORT}:80"
-      - "81:81"
-      - "443:443"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     volumes:
-      - /home/nexus/nginx-proxy-manager/data:/data
-      - /home/nexus/nginx-proxy-manager/letsencrypt:/etc/letsencrypt
+      - /home/nexus/nginx/conf.d:/etc/nginx/conf.d:ro
 EOF
   ok "Compose criado"
 }
@@ -1018,8 +1027,8 @@ configure_proxy_file(){
   [[ -n "$EXTERNAL_HOST" ]] && names="$names $EXTERNAL_HOST"
   names="$(echo "$names" | tr ' ' '\n' | awk 'NF && !seen[$0]++' | xargs)"
 
-  mkdir -p "$TARGET/nginx-proxy-manager/data/nginx/proxy_host"
-  cat > "$TARGET/nginx-proxy-manager/data/nginx/proxy_host/5.conf" <<EOF
+  mkdir -p "$TARGET/nginx/conf.d"
+  cat > "$TARGET/nginx/conf.d/default.conf" <<EOF
 # Nexus NVR - gerado automaticamente
 server {
   listen 80;
@@ -1238,148 +1247,19 @@ start_docker(){
   $COMPOSE_CMD pull || warn "Pull teve avisos"
   init_filebrowser_db
 
-  docker rm -f go2rtc nvr-frontend visualizador_videos nexus_api nginx-proxy-manager_app_1 gravador_Rua gravador_teste_nexus >/dev/null 2>&1 || true
+  docker rm -f go2rtc nvr-frontend visualizador_videos nexus_api nvr_proxy nginx-proxy-manager_app_1 gravador_Rua gravador_teste_nexus >/dev/null 2>&1 || true
 
   $COMPOSE_CMD up -d || die "Falha ao subir compose"
   sleep 12
 
-  if docker exec nginx-proxy-manager_app_1 nginx -t >/dev/null 2>&1; then
-    docker exec nginx-proxy-manager_app_1 nginx -s reload >/dev/null 2>&1 || true
+  if docker exec nvr_proxy nginx -t >/dev/null 2>&1; then
+    docker exec nvr_proxy nginx -s reload >/dev/null 2>&1 || true
     ok "Nginx recarregado"
   else
     warn "Nginx ainda não aceitou configuração; pode corrigir após iniciar completamente."
   fi
 
   docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-}
-
-setup_npm_login(){
-  sec "Configurando login padrão do Nginx Proxy Manager"
-
-  local token=""
-  local login_resp=""
-  local create_resp=""
-  local api_ready="0"
-
-  echo "[INFO] Aguardando backend do Nginx Proxy Manager ficar pronto..."
-
-  for i in {1..90}; do
-    # Se a API responder qualquer coisa JSON/erro válido, já está acordada.
-    if curl -m 5 -s "http://127.0.0.1:81/api" >/tmp/npm_api_wait.out 2>/dev/null; then
-      api_ready="1"
-      break
-    fi
-
-    # Algumas versões não respondem /api, mas respondem POST /api/tokens.
-    login_resp="$(curl -m 5 -s -X POST "http://127.0.0.1:81/api/tokens" \
-      -H "Content-Type: application/json" \
-      -d "{\"identity\":\"$NPM_EMAIL\",\"secret\":\"$NPM_PASS\"}" || true)"
-    if echo "$login_resp" | grep -Eq 'token|error|message'; then
-      api_ready="1"
-      break
-    fi
-
-    sleep 2
-  done
-
-  if [[ "$api_ready" != "1" ]]; then
-    warn "Backend do NPM não respondeu a tempo. Vou tentar criar/login mesmo assim."
-  else
-    ok "Backend do NPM respondeu"
-  fi
-
-  # 1) Tenta login com o usuário padrão Nexus, caso já exista.
-  for i in {1..15}; do
-    login_resp="$(curl -m 8 -s -X POST "http://127.0.0.1:81/api/tokens" \
-      -H "Content-Type: application/json" \
-      -d "{\"identity\":\"$NPM_EMAIL\",\"secret\":\"$NPM_PASS\"}" || true)"
-
-    token="$(echo "$login_resp" | python3 -c 'import sys,json
-try:
-    print(json.load(sys.stdin).get("token",""))
-except Exception:
-    print("")' 2>/dev/null)"
-
-    if [[ -n "$token" ]]; then
-      ok "Login NPM padrão já funciona: $NPM_EMAIL / $NPM_PASS"
-      return 0
-    fi
-    sleep 1
-  done
-
-  # 2) Tenta criar o primeiro usuário. Em versões novas isso é permitido sem autenticação
-  # somente quando ainda não existe nenhum usuário ativo.
-  for i in {1..45}; do
-    create_resp="$(curl -m 12 -s -X POST "http://127.0.0.1:81/api/users" \
-      -H "Content-Type: application/json" \
-      -d "{\"name\":\"Nexus NVR\",\"nickname\":\"Admin\",\"email\":\"$NPM_EMAIL\",\"roles\":[\"admin\"],\"is_disabled\":false,\"auth\":{\"type\":\"password\",\"secret\":\"$NPM_PASS\"}}" || true)"
-
-    if echo "$create_resp" | grep -q "\"email\":\"$NPM_EMAIL\""; then
-      ok "Primeiro usuário NPM criado: $NPM_EMAIL / $NPM_PASS"
-      break
-    fi
-
-    # Se já existir, o login deve funcionar logo depois.
-    if echo "$create_resp" | grep -Eiq "already|exist|duplicate|unique"; then
-      warn "Usuário NPM parece já existir; testando login."
-      break
-    fi
-
-    sleep 2
-  done
-
-  # 3) Testa login novamente após criação.
-  for i in {1..20}; do
-    login_resp="$(curl -m 8 -s -X POST "http://127.0.0.1:81/api/tokens" \
-      -H "Content-Type: application/json" \
-      -d "{\"identity\":\"$NPM_EMAIL\",\"secret\":\"$NPM_PASS\"}" || true)"
-
-    token="$(echo "$login_resp" | python3 -c 'import sys,json
-try:
-    print(json.load(sys.stdin).get("token",""))
-except Exception:
-    print("")' 2>/dev/null)"
-
-    if [[ -n "$token" ]]; then
-      ok "Login NPM testado com sucesso: $NPM_EMAIL / $NPM_PASS"
-      return 0
-    fi
-    sleep 2
-  done
-
-  # 4) Compatibilidade com versões antigas: admin@example.com/changeme.
-  local old_token
-  old_token="$(curl -m 8 -s -X POST "http://127.0.0.1:81/api/tokens" \
-    -H "Content-Type: application/json" \
-    -d '{"identity":"admin@example.com","secret":"changeme"}' | python3 -c 'import sys,json
-try:
-    print(json.load(sys.stdin).get("token",""))
-except Exception:
-    print("")' 2>/dev/null)"
-
-  if [[ -n "$old_token" ]]; then
-    curl -m 10 -s -X PUT "http://127.0.0.1:81/api/users/1" \
-      -H "Authorization: Bearer $old_token" -H "Content-Type: application/json" \
-      -d "{\"name\":\"Nexus NVR\",\"nickname\":\"Admin\",\"email\":\"$NPM_EMAIL\",\"roles\":[\"admin\"],\"is_disabled\":false}" >/dev/null 2>&1 || true
-
-    curl -m 10 -s -X PUT "http://127.0.0.1:81/api/users/1/auth" \
-      -H "Authorization: Bearer $old_token" -H "Content-Type: application/json" \
-      -d "{\"type\":\"password\",\"current\":\"changeme\",\"secret\":\"$NPM_PASS\"}" >/dev/null 2>&1 || true
-
-    login_resp="$(curl -m 8 -s -X POST "http://127.0.0.1:81/api/tokens" \
-      -H "Content-Type: application/json" \
-      -d "{\"identity\":\"$NPM_EMAIL\",\"secret\":\"$NPM_PASS\"}" || true)"
-    token="$(echo "$login_resp" | python3 -c 'import sys,json
-try:
-    print(json.load(sys.stdin).get("token",""))
-except Exception:
-    print("")' 2>/dev/null)"
-
-    [[ -n "$token" ]] && { ok "NPM antigo atualizado e login testado"; return 0; }
-  fi
-
-  warn "Não consegui configurar/login NPM automaticamente. Última resposta de criação:"
-  echo "$create_resp"
 }
 
 cron_setup(){
@@ -1391,14 +1271,18 @@ cron_setup(){
   # Remove tambem a limpeza legada criada por versoes antigas do instalador.
   crontab -l 2>/dev/null \
     | grep -v '/home/nexus/cria_pasta_camera.sh' \
+    | grep -v '/home/nexus/cron/cria_pasta_camera.sh' \
+    | grep -v 'NEXUS_NVR_CRIAR_PASTAS' \
+    | grep -v 'NEXUS_NVR_RETENCAO' \
     | grep -v "find /home/nexus/gravacoes -type f -name '\\*.mp4' -mtime +1 -delete" \
     | grep -v 'find /home/nexus/gravacoes -type f -name '\''\*.mp4'\'' -mtime +1 -delete' \
     > "$tmp" || true
 
-  echo "49 23 * * * /home/nexus/cria_pasta_camera.sh" >> "$tmp"
+  echo "*/10 * * * * /home/nexus/cron/retencao_nvr.sh --auto # NEXUS_NVR_RETENCAO" >> "$tmp"
+  echo "49 23 * * * /home/nexus/cron/cria_pasta_camera.sh # NEXUS_NVR_CRIAR_PASTAS" >> "$tmp"
   crontab "$tmp"
   rm -f "$tmp"
-  ok "Cron configurado sem limpeza legada de videos"
+  ok "Cron configurado em /home/nexus/cron"
 }
 
 http_code(){
@@ -1466,7 +1350,7 @@ test_services(){
   sec "Testando serviços no IP $CURRENT_IP"
   local c
 
-  for container in go2rtc nvr-frontend visualizador_videos nexus_api nginx-proxy-manager_app_1; do
+  for container in go2rtc nvr-frontend visualizador_videos nexus_api nvr_proxy; do
     docker ps --format '{{.Names}}' | grep -qx "$container" && ok "$container rodando" || fail "$container não está rodando"
   done
 
@@ -1503,7 +1387,7 @@ PY
 
 test_recording(){
   sec "Testando gravação"
-  /home/nexus/cria_pasta_camera.sh || true
+  /home/nexus/cron/cria_pasta_camera.sh || /home/nexus/cria_pasta_camera.sh || true
 
   local n
   n="$(active_camera_count 2>/dev/null || echo 0)"
@@ -1650,7 +1534,7 @@ restart_containers_after_ip_change(){
     nvr-frontend
     visualizador_videos
     nexus_api
-    nginx-proxy-manager_app_1
+    nvr_proxy
   )
 
   local restarted=0
@@ -1669,8 +1553,8 @@ restart_containers_after_ip_change(){
     sleep 20
   fi
 
-  if docker exec nginx-proxy-manager_app_1 nginx -t >/dev/null 2>&1; then
-    docker exec nginx-proxy-manager_app_1 nginx -s reload >/dev/null 2>&1 || true
+  if docker exec nvr_proxy nginx -t >/dev/null 2>&1; then
+    docker exec nvr_proxy nginx -s reload >/dev/null 2>&1 || true
     ok "Nginx recarregado após restart"
   else
     warn "Nginx não aceitou teste após restart; os testes finais vão indicar se há falha."
@@ -1708,11 +1592,10 @@ final_summary(){
   echo "  Pasta real: ${RECORDINGS_REAL_DIR:-/home/nexus/gravacoes}"
   echo
   echo "Credenciais padrão:"
-  echo "  Nginx Proxy Manager: $NPM_EMAIL / $NPM_PASS"
   echo "  Filebrowser: $FB_USER / $FB_PASS"
   echo
-  echo "Observação: o painel do Nginx Proxy Manager pode mostrar 0 Proxy Hosts."
-  echo "As rotas do Nexus NVR são geradas automaticamente por arquivo interno do Nginx."
+  echo "Proxy:"
+  echo "  Nginx puro em container nvr_proxy, sem painel web adicional."
   echo
   echo "IMPORTANTE: altere as senhas padrão após o primeiro acesso."
   echo "Log: $LOG_FILE"
@@ -1730,8 +1613,6 @@ main(){
     # shellcheck disable=SC1090
     source "$STATE_FILE"
 
-    NPM_EMAIL="${NPM_EMAIL:-$DEFAULT_NPM_EMAIL}"
-    NPM_PASS="${NPM_PASS:-$DEFAULT_NPM_PASS}"
     FB_USER="${FB_USER:-$DEFAULT_FB_USER}"
     FB_PASS="${FB_PASS:-$DEFAULT_FB_PASS}"
     NETWORK_MODE="${NETWORK_MODE:-$DEFAULT_NETWORK_MODE}"
@@ -1748,8 +1629,8 @@ main(){
     ok "Não vou reinstalar Docker, recopyar arquivos nem recriar containers."
     configure_proxy_file "$CURRENT_IP"
     configure_go2rtc_webrtc
-    if docker exec nginx-proxy-manager_app_1 nginx -t >/dev/null 2>&1; then
-      docker exec nginx-proxy-manager_app_1 nginx -s reload >/dev/null 2>&1 || true
+    if docker exec nvr_proxy nginx -t >/dev/null 2>&1; then
+      docker exec nvr_proxy nginx -s reload >/dev/null 2>&1 || true
       ok "Nginx recarregado"
     else
       warn "Nginx não aceitou reload agora; vou continuar os testes."
@@ -1758,11 +1639,9 @@ main(){
     # Após a troca de IP, reinicia os containers para evitar cache/rotas antigas.
     restart_containers_after_ip_change
 
-    setup_npm_login
     test_services
     test_time
     test_recording
-    setup_npm_login
     IP_APPLIED="1"
     final_summary
     exit 0
@@ -1776,14 +1655,9 @@ main(){
   configure_go2rtc_webrtc
   cron_setup
   start_docker
-  setup_npm_login
   test_services
   test_time
   test_recording
-
-  # Reforço: em algumas versões o NPM só libera criação da primeira conta
-  # depois que o backend e as migrações terminam totalmente.
-  setup_npm_login
 
   configure_static_ip
   final_summary
