@@ -12,7 +12,8 @@ API_CONFIG="${API_CONFIG:-$NVR_ROOT/api/nvr_config.json}"
 GO2RTC_CONFIG="${GO2RTC_CONFIG:-$NVR_ROOT/go2rtc/go2rtc.yaml}"
 RECORDINGS_DIR="${RECORDINGS_DIR:-$NVR_ROOT/gravacoes}"
 RETENTION_CONFIG="${RETENTION_CONFIG:-$NVR_ROOT/retencao_nvr.conf}"
-RETENTION_SCRIPT="${RETENTION_SCRIPT:-/home/ubuntu/NVR/NEXUSNVR_RETENCAO.sh}"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RETENTION_SCRIPT="${RETENTION_SCRIPT:-$SCRIPT_DIR/NEXUSNVR_RETENCAO.sh}"
 LOG_FILE="/tmp/nexus_nvr_diagnostico_$(date +%Y%m%d_%H%M%S).log"
 
 OK=0

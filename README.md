@@ -13,7 +13,29 @@ O pacote pode ser usado em servidor local, VPS ou em ambiente misto com acesso l
 - Uma porta TCP livre para o painel/API
 - A mesma porta em UDP liberada quando for usar RTC/WebRTC pela internet
 
-## Instalacao
+## Instalacao Recomendada
+
+Baixe e execute apenas o instalador do comando:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/arielssc/NEXUSNVR/main/NEXUSNVR_COMANDO.sh | sudo bash
+```
+
+Depois abra o painel:
+
+```bash
+nexusnvr
+```
+
+O comando `nexusnvr` abre um menu para instalar, diagnosticar, fazer backup, restaurar, configurar retencao, limpar o sistema e configurar o Portao IoT.
+
+O pacote fica instalado em:
+
+```text
+/opt/nexusnvr
+```
+
+## Instalacao Manual
 
 Entre na pasta do pacote e execute:
 
@@ -147,7 +169,7 @@ sudo bash NEXUSNVR_RETENCAO.sh --clean
 O modo automatico e instalado no cron:
 
 ```text
-*/10 * * * * /home/ubuntu/NVR/NEXUSNVR_RETENCAO.sh --auto
+*/10 * * * * /opt/nexusnvr/NEXUSNVR_RETENCAO.sh --auto
 ```
 
 A retencao so apaga arquivos dentro da pasta segura de gravacoes e respeita protecao para arquivos recentes.
